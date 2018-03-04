@@ -4,3 +4,6 @@
 [submodule "tools/linter"]
 	path = tools/linter
 	url = git@github.com:ethz-asl/linter.git
+[submodule "quest_gnc"]
+	path = quest_gnc
+	url = /Users/mereweth/quest_gnc/.git
