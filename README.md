@@ -16,7 +16,7 @@ git submodule update --init --recursive
 
 ```
 cd quest_gnc
-mkdir build && cd build
+mkdir build27 && cd build27
 cmake ../ -DNO_ROS=1 -DPYBIND11_PYTHON_VERSION=2.7
 make
 ```
@@ -26,5 +26,5 @@ make
 Add the build folder above to your path:
 ```
 import sys
-sys.path.append('../quest_gnc/build27')
+sys.path.append('quest_gnc/build27')
 ```
