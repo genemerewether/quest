@@ -3,7 +3,7 @@
 	url = https://github.com/pybind11/pybind11.git
 [submodule "tools/linter"]
 	path = tools/linter
-	url = git@github.com:ethz-asl/linter.git
+	url = git@github.com:genemerewether/linter.git
 [submodule "quest_gnc"]
 	path = quest_gnc
 	url = ../quest_gnc.git
