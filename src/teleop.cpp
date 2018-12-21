@@ -95,7 +95,6 @@ public:
     if (control_mode == "attitude") {
       private_nh.param<double>("pitch_max", axes_.x.factor, 30.0);
       private_nh.param<double>("roll_max", axes_.y.factor, 30.0);
-      private_nh.param<double>("yawrate_max", axes_.z.factor, 30.0);
       private_nh.param<double>("thrust_max", axes_.thrust.factor, 10.0);
       private_nh.param<double>("thrust_offset", axes_.thrust.offset, 10.0);
 
@@ -130,7 +129,7 @@ public:
     }
     this->tLast_ = now;
 
-    attRateThrust.header.stamp = ros::Time::now();
+    attRateThrust.header.stamp = now;
     attRateThrust.header.frame_id = "teleop";
 
     double roll = -getAxis(joy, axes_.y) * M_PI / 180.0;
