@@ -2,7 +2,7 @@
 
 <launch>
   <arg name="joy_dev" default="/dev/input/js0" />
-  <arg name="control_mode" default="velocity"/>
+  <arg name="control_mode" default="attitude"/>
 
   <node name="joy" pkg="joy" type="joy_node" output="screen" >
     <param name="dev" value="$(arg joy_dev)" />
@@ -20,6 +20,9 @@
       z_axis: 2
       thrust_axis: 2
       yaw_axis: 1
+      
+      thrust_max: 10
+      thrust_offset: -1
 
       slow_button: 12
       go_button: 13
