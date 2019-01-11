@@ -104,8 +104,8 @@ public:
           robot_nh.advertise<mav_msgs::AttitudeRateThrust>(
               "attitude_rate_thrust_setpoint", 10);
     } else if (control_mode == "attrate") {
-      private_nh.param<double>("pitch_max", axes_.x.factor, 30.0);
-      private_nh.param<double>("roll_max", axes_.y.factor, 30.0);
+      private_nh.param<double>("pitchrate_max", axes_.x.factor, 90.0);
+      private_nh.param<double>("rollrate_max", axes_.y.factor, 90.0);
       private_nh.param<double>("thrust_max", axes_.thrust.factor, 10.0);
       private_nh.param<double>("thrust_offset", axes_.thrust.offset, 10.0);
 
