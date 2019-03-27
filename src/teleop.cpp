@@ -103,6 +103,17 @@ public:
       attRateThrust_publisher_ =
           robot_nh.advertise<mav_msgs::AttitudeRateThrust>(
               "attitude_rate_thrust_setpoint", 10);
+    } else if (control_mode == "attrate") {
+      private_nh.param<double>("pitchrate_max", axes_.x.factor, 90.0);
+      private_nh.param<double>("rollrate_max", axes_.y.factor, 90.0);
+      private_nh.param<double>("thrust_max", axes_.thrust.factor, 10.0);
+      private_nh.param<double>("thrust_offset", axes_.thrust.offset, 10.0);
+
+      joy_subscriber_ = node_handle_.subscribe<sensor_msgs::Joy>(
+          "joy", 1, boost::bind(&Teleop::joyAttRateCallback, this, _1));
+      attRateThrust_publisher_ =
+          robot_nh.advertise<mav_msgs::AttitudeRateThrust>(
+              "attitude_rate_thrust_setpoint", 10);
     } else if (control_mode == "velocity") {
       private_nh.param<double>("x_velocity_max", axes_.x.factor, 2.0);
       private_nh.param<double>("y_velocity_max", axes_.y.factor, 2.0);
@@ -143,7 +154,29 @@ public:
     attRateThrust.thrust.z = getAxis(joy, axes_.thrust);
     attRateThrust.angular_rates.x = 0.0;
     attRateThrust.angular_rates.y = 0.0;
-    attRateThrust.angular_rates.z = 0.0;
+    attRateThrust.angular_rates.z = yawrate;
+
+    attRateThrust_publisher_.publish(attRateThrust);
+  }
+  
+  void joyAttRateCallback(const sensor_msgs::JoyConstPtr &joy) {
+    ros::Time now = ros::Time::now();
+    mav_msgs::AttitudeRateThrust attRateThrust;
+
+    attRateThrust.header.stamp = now;
+    attRateThrust.header.frame_id = "teleop";
+
+    double roll = -getAxis(joy, axes_.y) * M_PI / 180.0;
+    double pitch = getAxis(joy, axes_.x) * M_PI / 180.0;
+    double yawrate = getAxis(joy, axes_.yaw) * M_PI / 180.0;
+
+    tf2::Quaternion q;
+    q.setRPY(0.0, 0.0, 0.0);
+    attRateThrust.attitude = tf2::toMsg(q);
+    attRateThrust.thrust.z = getAxis(joy, axes_.thrust);
+    attRateThrust.angular_rates.x = roll;
+    attRateThrust.angular_rates.y = pitch;
+    attRateThrust.angular_rates.z = yawrate;
 
     attRateThrust_publisher_.publish(attRateThrust);
   }

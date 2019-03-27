@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+
+<launch>
+  <arg name="mav_name" />
+  <param name="robot_description" command="$(find xacro)/xacro.py $(find rotors_description)/urdf/$(arg mav_name)_base.xacro namespace:=$(arg mav_name) enable_mavlink_interface:=false enable_ground_truth:=false enable_logging:=false" />
+  
+  <node pkg="tf" type="static_transform_publisher" name="$(arg mav_name)_static_broadcaster" args="0 0 0 0 0 0 1 $(arg mav_name)/base_link $(arg mav_name)/base_link_inertia 100" />
+</launch>
