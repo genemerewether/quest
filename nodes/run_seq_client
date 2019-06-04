@@ -3,6 +3,8 @@
 import rospy
 import actionlib
 import sys
+import os
+import future
 
 from fprime_msgs.msg import RunSeqAction, RunSeqGoal
 
@@ -10,11 +12,17 @@ if __name__ == '__main__':
    if len(sys.argv) < 2:
       sys.exit(1)
 
+   for seq in sys.argv[1:]:
+      if not os.path.exists(seq):
+         print("{} does not exist".format(seq))
+         exit(1)
+
    rospy.init_node('run_seq_client')
    client = actionlib.SimpleActionClient('ROSSEQ', RunSeqAction)
    client.wait_for_server()
 
-   goal = RunSeqGoal()
-   goal.pathToSeq.data = sys.argv[1]
-   client.send_goal(goal)
-   client.wait_for_result()
+   for seq in sys.argv[1:]:
+      goal = RunSeqGoal()
+      goal.pathToSeq.data = seq
+      client.send_goal(goal)
+      client.wait_for_result()
