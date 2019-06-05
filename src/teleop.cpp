@@ -42,6 +42,7 @@ private:
   ros::Publisher flatOutput_publisher_, attRateThrust_publisher_;
   ros::Time tLast_;
   double yaw_;
+  mav_msgs::FlatOutput flatOut_;
 
   struct Axis {
     Axis() : axis(0), factor(0.0), offset(0.0) {}
@@ -115,15 +116,31 @@ public:
           robot_nh.advertise<mav_msgs::AttitudeRateThrust>(
               "attitude_rate_thrust_setpoint", 10);
     } else if (control_mode == "velocity") {
-      private_nh.param<double>("x_velocity_max", axes_.x.factor, 2.0);
-      private_nh.param<double>("y_velocity_max", axes_.y.factor, 2.0);
-      private_nh.param<double>("z_velocity_max", axes_.z.factor, 2.0);
+      private_nh.param<double>("x_velocity_max", axes_.x.factor, 0.5);
+      private_nh.param<double>("y_velocity_max", axes_.y.factor, 0.5);
+      private_nh.param<double>("z_velocity_max", axes_.z.factor, 0.5);
 
     } else if (control_mode == "position") {
-      private_nh.param<double>("x_velocity_max", axes_.x.factor, 2.0);
-      private_nh.param<double>("y_velocity_max", axes_.y.factor, 2.0);
-      private_nh.param<double>("z_velocity_max", axes_.z.factor, 2.0);
+      private_nh.param<double>("x_velocity_max", axes_.x.factor, 0.5);
+      private_nh.param<double>("y_velocity_max", axes_.y.factor, 0.5);
+      private_nh.param<double>("z_velocity_max", axes_.z.factor, 0.5);
+      
+      joy_subscriber_ = node_handle_.subscribe<sensor_msgs::Joy>(
+          "joy", 1, boost::bind(&Teleop::joyPoseCallback, this, _1));
+      flatOutput_publisher_ =
+          robot_nh.advertise<mav_msgs::FlatOutput>(
+              "flat_output_setpoint", 10);
 
+      flatOut_.position.x = 0;
+      flatOut_.position.y = 0;
+      flatOut_.position.z = 0;
+      flatOut_.velocity.x = 0;
+      flatOut_.velocity.y = 0;
+      flatOut_.velocity.z = 0;
+      flatOut_.acceleration.x = 0;
+      flatOut_.acceleration.y = 0;
+      flatOut_.acceleration.z = 0;
+      flatOut_.yaw = 0;
     } else {
       ROS_ERROR_STREAM("Unsupported control mode: " << control_mode);
     }
@@ -157,6 +174,31 @@ public:
     attRateThrust.angular_rates.z = yawrate;
 
     attRateThrust_publisher_.publish(attRateThrust);
+  }
+
+  
+  void joyPoseCallback(const sensor_msgs::JoyConstPtr &joy)
+  {
+    ros::Time now = ros::Time::now();
+    double dt = 0.0;
+    if (!flatOut_.header.stamp.isZero()) {
+      dt = std::max(0.0, std::min(1.0, (now - flatOut_.header.stamp).toSec()));
+    }
+
+    flatOut_.header.stamp = now;
+    
+    flatOut_.velocity.x = cos(yaw_) * getAxis(joy, axes_.x) - sin(yaw_) * getAxis(joy, axes_.y);
+    flatOut_.velocity.y = cos(yaw_) * getAxis(joy, axes_.y) + sin(yaw_) * getAxis(joy, axes_.x);
+    flatOut_.velocity.z = getAxis(joy, axes_.z);
+    
+    flatOut_.position.x += flatOut_.velocity.x * dt;
+    flatOut_.position.y += flatOut_.velocity.y * dt;
+    flatOut_.position.z += flatOut_.velocity.z * dt;
+    
+    yaw_ += getAxis(joy, axes_.yaw) * M_PI/180.0 * dt;
+    flatOut_.yaw = yaw_;
+
+    flatOutput_publisher_.publish(flatOut_);
   }
   
   void joyAttRateCallback(const sensor_msgs::JoyConstPtr &joy) {
