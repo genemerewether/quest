@@ -6,7 +6,7 @@ I = 0.01; % inertia; 2D sim - disallow yaw rotation
 % initial conditions
 x0 = [0.0; 1.0];
 xdot0 = [0.0; 0.0];
-theta0 = 0.0;
+theta0 = -1.0;
 thetadot0 = 0.0;
 X0 = [x0; xdot0; theta0; thetadot0];
 
@@ -20,11 +20,10 @@ force_att = m * g;
 theta_att = 0.0;
 thetadot_att = 0.0;
 
-% gains
-kx = diag([6.0, 6.0], 0);
-kxdot = diag([2.0, 2.5], 0);
+% gains kx = diag([ 20.0, 20.0 ], 0);
+kxdot = diag([ 12.0, 12.0 ], 0);
 kR = 40.0;
-komega = 6.0;
+komega = 20.0;
 
 tspan = 0:0.01:10;
 [t,y] = ode45(@(t, X) sim2dfunc(t, X, ...
@@ -56,6 +55,10 @@ plot(t, thetades, ...
      t, omegades, ...
      t, y(:, 6));
 legend('thetades', 'theta', 'diff thetades', 'omegades', 'omega');
+ylabel({'thrust vector angle (rad) / angular velocity (rad/s)'});
+xlabel('time (s)');
+xlim([0 5]);
+ylim([-1.5 5]);
 
 figure;
 plot(t, y(:, 1), ...
