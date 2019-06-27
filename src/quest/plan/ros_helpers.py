@@ -16,6 +16,7 @@ foreign countries or providing access to foreign persons.
 import rospy, rospkg
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import *
+from mav_msgs.msg import FlatOutput
 from interactive_markers.menu_handler import *
 from interactive_markers.interactive_marker_server import *
 import tf
@@ -59,7 +60,7 @@ class TrajectoryDisplayWorker(QObject):
 
     def __init__(self, finished_callback=None,
                  node_name='trajectory_display_worker',
-                 frame_id='local_origin',
+                 frame_id='world',
                  marker_topic='trajectory_marker',
                  new_node=False,
                  parent=None,
@@ -223,7 +224,7 @@ class NodePathWorker(QObject):
 
     def __init__(self, finished_callback=None,
                  node_name='path_display_worker',
-                 frame_id='local_origin',
+                 frame_id='world',
                  marker_topic='path_marker',
                  new_node=False,
                  parent=None):
@@ -405,7 +406,7 @@ class WaypointControlWorker(QObject):
                  menu_callback=None,
                  finished_callback=None,
                  node_name='waypoint_control_worker',
-                 frame_id='local_origin',
+                 frame_id='world',
                  marker_topic='trajectory_control',
                  new_node=False,
                  parent=None,
@@ -852,7 +853,7 @@ class AnimateWorker(QObject):
                  finished_callback=None,
                  node_name='animate_worker',
                  frame_id='animation',
-                 parent_frame_id='local_origin',
+                 parent_frame_id='world',
                  marker_topic='animation_marker',
                  new_node=False,
                  slowdown=1,
@@ -923,11 +924,12 @@ class AnimateWorker(QObject):
 
                 self.t = 0.
 
-            (t_max, x, y, z, qw, qx, qy, qz) = self.eval_callback(self.t)
+            (t_max, pos_vec, qw, qx, qy, qz,
+             yaw, vel_vec, acc_vec) = self.eval_callback(self.t)
             self.t_max = t_max
 
 
-            self.tf_br.sendTransform((x,y,z),
+            self.tf_br.sendTransform((pos_vec[0],pos_vec[1],pos_vec[2]),
                                      (qx, qy, qz, qw),
                                      rospy.Time.now(),
                                      self.frame_id,
@@ -955,12 +957,113 @@ class AnimateWorker(QObject):
     def stop_publish(self):
         self.publish = False
 
+class FlatOutputCommandWorker(QObject):
+    finished = Signal() # class variable shared by all instances
+
+    def __init__(self,
+                 eval_callback,
+                 dt = 0.01,
+                 finished_callback=None,
+                 node_name='command_worker',
+                 frame_id='command',
+                 parent_frame_id='world',
+                 command_topic='flat_output_setpoint',
+                 new_node=False,
+                 parent=None):
+        super(FlatOutputCommandWorker, self).__init__(parent)
+
+        if new_node:
+            rospy.init_node(node_name, anonymous=True)
+
+        if finished_callback is not None:
+            self.finished.connect(finished_callback)
+
+        #TODO(mereweth@jpl.nasa.gov) - how to shut down?
+        self.is_running = True
+
+        self.publish = True
+        self.command = False
+        self.eval_callback = eval_callback
+        self.t = 0.
+        self.t_max = 0.
+        self.dt = dt
+
+        self.R_old = None
+
+        self.frame_id = frame_id
+        self.parent_frame_id = parent_frame_id
+        self.tf_br = tf.TransformBroadcaster()
+        self.command_pub = rospy.Publisher(command_topic, FlatOutput, queue_size=1)
+
+        print("init control")
+        rospy.Timer(rospy.Duration(self.dt), self.on_timer_callback)
+
+    def on_timer_callback(self, event):
+        if not self.publish:
+            return
+
+        try:
+            if self.command:
+                self.t += self.dt
+                if self.t > self.t_max:
+                    self.t = self.t_max
+            else:
+
+                self.t = 0.
+
+            (t_max, pos_vec, qw, qx, qy, qz,
+             yaw, vel_vec, acc_vec) = self.eval_callback(self.t)
+            self.t_max = t_max
+
+
+            self.tf_br.sendTransform((pos_vec[0],pos_vec[1],pos_vec[2]),
+                                     (qx, qy, qz, qw),
+                                     rospy.Time.now(),
+                                     self.frame_id,
+                                     self.parent_frame_id)
+
+            msg = FlatOutput()
+            msg.header.stamp = rospy.Time.now()
+            msg.header.frame_id = self.frame_id
+            msg.position.x = pos_vec[0]
+            msg.position.y = pos_vec[1]
+            msg.position.z = pos_vec[2]
+            msg.velocity.x = vel_vec[0]
+            msg.velocity.y = vel_vec[1]
+            msg.velocity.z = vel_vec[2]
+            msg.acceleration.x = acc_vec[0]
+            msg.acceleration.y = acc_vec[1]
+            msg.acceleration.z = acc_vec[2]
+            msg.yaw = yaw
+
+            self.command_pub.publish(msg)
+        #except Exception as e:
+            #print("Error in AnimateWorker")
+            #print(e)
+        except:
+            # print("Unknown error in AnimateWorker")
+            return
+
+    def start_command(self):
+        print("Ros helper start command")
+        self.command = True
+
+    def stop_command(self):
+        self.command = False
+
+    def start_publish(self):
+        self.t = 0
+        self.publish = True
+
+    def stop_publish(self):
+        self.publish = False
+
 class ObstacleControlWorker(QObject):
     finished = Signal() # class variable shared by all instances
 
     def __init__(self, control_callback,finished_callback=None,
                  node_name='obstacle_display_worker',
-                 frame_id='local_origin',
+                 frame_id='world',
                  marker_topic='obstacle_marker',
                  new_node=False,
                  parent=None):

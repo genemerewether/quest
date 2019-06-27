@@ -44,6 +44,13 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="dummy_waypoints_button">
+       <property name="text">
+        <string>Insert dummy waypoints</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <layout class="QHBoxLayout" name="horizontalLayout">
        <item>
         <widget class="QLabel" name="epsilon_label">

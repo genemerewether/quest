@@ -22,7 +22,7 @@
       yaw_axis: 1
       
       thrust_max: 10
-      thrust_offset: -1
+      thrust_offset: 10
 
       slow_button: 12
       go_button: 13
