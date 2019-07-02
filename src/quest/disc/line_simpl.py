@@ -52,6 +52,7 @@ class RDPGUI(QWidget):
         self.load_waypoints_button.clicked.connect(self.on_load_waypoints_button_click)
         self.save_waypoints_button.clicked.connect(self.on_save_waypoints_button_click)
         self.simplify_button.clicked.connect(self.on_simplify_button_click)
+        self.dummy_waypoints_button.clicked.connect(self.on_dummy_waypoints_button_click)
 
         double_validator = QDoubleValidator(parent=self.epsilon_line_edit)
         double_validator.setBottom(0)
@@ -98,6 +99,10 @@ class RDPGUI(QWidget):
 
         print("Simplified waypoints")
 
+    def on_dummy_waypoints_button_click(self, checked=False):
+        self.in_waypoints = {'x': [0, 0], 'y': [0, 0], 'z': [0, 1], 'yaw': [0, 0]}
+        self.global_dict['full_waypoints'] = self.in_waypoints
+        
     def on_load_waypoints_button_click(self, checked=False, filename=None):
         if filename is None:
             filename = QFileDialog.getOpenFileName(self,

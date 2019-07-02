@@ -7,16 +7,13 @@
     <x>0</x>
     <y>0</y>
     <width>997</width>
-    <height>800</height>
+    <height>909</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Form</string>
   </property>
   <layout class="QGridLayout" name="gridLayout">
-   <item row="0" column="0">
-    <layout class="QHBoxLayout" name="horizontalLayout_28"/>
-   </item>
    <item row="0" column="2">
     <layout class="QHBoxLayout" name="horizontalLayout_trajeditor"/>
    </item>
@@ -291,9 +288,17 @@
         </size>
        </property>
        <property name="currentIndex">
-        <number>0</number>
+        <number>3</number>
        </property>
        <widget class="QWidget" name="page">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>0</y>
+          <width>961</width>
+          <height>93</height>
+         </rect>
+        </property>
         <attribute name="label">
          <string>Takeoff/Land</string>
         </attribute>
@@ -414,8 +419,8 @@
          <rect>
           <x>0</x>
           <y>0</y>
-          <width>823</width>
-          <height>76</height>
+          <width>961</width>
+          <height>93</height>
          </rect>
         </property>
         <attribute name="label">
@@ -541,8 +546,8 @@
          <rect>
           <x>0</x>
           <y>0</y>
-          <width>823</width>
-          <height>76</height>
+          <width>961</width>
+          <height>93</height>
          </rect>
         </property>
         <attribute name="label">
@@ -615,10 +620,18 @@
         </widget>
        </widget>
        <widget class="QWidget" name="page_2">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>0</y>
+          <width>961</width>
+          <height>161</height>
+         </rect>
+        </property>
         <attribute name="label">
          <string>Obstacle-aware</string>
         </attribute>
-        <widget class="QWidget" name="">
+        <widget class="QWidget" name="layoutWidget">
          <property name="geometry">
           <rect>
            <x>0</x>
@@ -647,7 +660,7 @@
           </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="">
+        <widget class="QWidget" name="layoutWidget">
          <property name="geometry">
           <rect>
            <x>0</x>
@@ -719,16 +732,30 @@
       </layout>
      </item>
      <item>
-      <widget class="QCheckBox" name="animate_checkbox">
-       <property name="text">
-        <string>Animate</string>
-       </property>
-      </widget>
+      <layout class="QHBoxLayout" name="horizontalLayout_30">
+       <item>
+        <widget class="QCheckBox" name="animate_checkbox">
+         <property name="text">
+          <string>Animate</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="command_checkbox">
+         <property name="text">
+          <string>Command trajectory</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
      <item>
       <layout class="QHBoxLayout" name="horizontalLayout_16"/>
      </item>
     </layout>
+   </item>
+   <item row="0" column="0">
+    <layout class="QHBoxLayout" name="horizontalLayout_28"/>
    </item>
   </layout>
  </widget>

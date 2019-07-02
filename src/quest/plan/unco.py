@@ -37,6 +37,7 @@ from python_qt_binding.QtWidgets import *
 from quest.plan.ros_helpers import TrajectoryDisplayWorker
 from quest.plan.ros_helpers import WaypointControlWorker
 from quest.plan.ros_helpers import AnimateWorker
+from quest.plan.ros_helpers import FlatOutputCommandWorker
 
 from geometry_msgs.msg import PoseStamped
 
@@ -147,19 +148,19 @@ class QRPolyTrajGUI(QWidget):
         self.ros_helper_thread.app = self
 
         self.marker_worker = TrajectoryDisplayWorker(
-                                            frame_id="local_origin",
+                                            frame_id="world",
                                             marker_topic="trajectory_marker",
                                             qr_type="main")
         self.marker_worker.moveToThread(self.ros_helper_thread)
 
         self.marker_worker_entry = TrajectoryDisplayWorker(
-                                            frame_id="local_origin",
+                                            frame_id="world",
                                             marker_topic="entry_marker",
                                             qr_type="entry")
         self.marker_worker_entry.moveToThread(self.ros_helper_thread)
 
         self.marker_worker_exit = TrajectoryDisplayWorker(
-                                            frame_id="local_origin",
+                                            frame_id="world",
                                             marker_topic="exit_marker",
                                             qr_type="exit")
         self.marker_worker_exit.moveToThread(self.ros_helper_thread)
@@ -167,7 +168,7 @@ class QRPolyTrajGUI(QWidget):
         self.interactive_marker_worker = WaypointControlWorker(
                                             self.on_waypoint_control_callback,
                                             menu_callback=self.on_waypoint_menu_control_callback,
-                                            frame_id="local_origin",
+                                            frame_id="world",
                                             marker_topic="trajectory_control",
                                             qr_type="main")
         self.interactive_marker_worker.moveToThread(self.ros_helper_thread)
@@ -175,7 +176,7 @@ class QRPolyTrajGUI(QWidget):
         self.interactive_marker_worker_entry = WaypointControlWorker(
                                             self.on_waypoint_control_callback,
                                             menu_callback=self.on_waypoint_menu_control_callback,
-                                            frame_id="local_origin",
+                                            frame_id="world",
                                             marker_topic="entry_control",
                                             qr_type="entry")
         self.interactive_marker_worker_entry.moveToThread(self.ros_helper_thread)
@@ -183,18 +184,24 @@ class QRPolyTrajGUI(QWidget):
         self.interactive_marker_worker_exit = WaypointControlWorker(
                                             self.on_waypoint_control_callback,
                                             menu_callback=self.on_waypoint_menu_control_callback,
-                                            frame_id="local_origin",
+                                            frame_id="world",
                                             marker_topic="exit_control",
                                             qr_type="exit")
         self.interactive_marker_worker_exit.moveToThread(self.ros_helper_thread)
 
-        self.animate_worker = AnimateWorker(self.on_animate_eval_callback,
+        self.animate_worker = AnimateWorker(self.on_eval_callback,
                                             frame_id="minsnap_animation",
-                                            parent_frame_id='local_origin',
+                                            parent_frame_id='world',
                                             marker_topic="minsnap_animation_marker",
                                             slowdown=1)
         self.animate_worker.moveToThread(self.ros_helper_thread)
 
+        self.command_worker = FlatOutputCommandWorker(self.on_eval_callback,
+                                                      frame_id="minsnap_command",
+                                                      parent_frame_id='world',
+                                                      command_topic="flat_output_setpoint")
+        self.command_worker.moveToThread(self.ros_helper_thread)
+        
         self.ros_helper_thread.start()
 
         self.polytraj_pub = None
@@ -211,6 +218,7 @@ class QRPolyTrajGUI(QWidget):
         self.global_dict = global_dict
 
         self.animate_checkbox.toggled.connect(self.on_animate_radio_button_toggle)
+        self.command_checkbox.toggled.connect(self.on_command_radio_button_toggle)
         self.close_loop_checkbox.toggled.connect(self.on_close_loop_checkbox_toggle)
         self.send_trajectory_button.clicked.connect(self.on_send_trajectory_button_click)
         self.load_trajectory_button.clicked.connect(self.on_load_trajectory_button_click)
@@ -513,7 +521,7 @@ class QRPolyTrajGUI(QWidget):
         #tf_br.sendTransform(t, q,
                         #rospy.Time.now(),
                         #'px4_pose_stamped',
-                        #'local_origin')
+                        #'world')
 
     def update_path_markers(self,qr_type="main"):
         if self.qr_polytraj is None:
@@ -639,6 +647,24 @@ class QRPolyTrajGUI(QWidget):
         self.optimizer_thread.started.connect(self.optimizer_worker.task)
         self.optimizer_thread.start()
 
+    def on_command_radio_button_toggle(self, command):
+
+        if command:
+            print("start command")
+            # self.ppoly_laps = utils.create_laps_trajectory(self.n_laps,
+            #                                           self.qr_polytraj,
+            #                                           self.qr_p_entry,
+            #                                           self.qr_p_exit,
+            #                                           self.entry_ID,
+            #                                           self.exit_ID,
+            #                                           self.qr_polytraj.closed_loop)
+            self.command_worker.start_publish()
+            self.command_worker.start_command()
+        else:
+            print("stop animation")
+            self.command_worker.stop_publish()
+            self.command_worker.stop_command()
+        
     def on_animate_radio_button_toggle(self, animate):
 
         if animate:
@@ -710,7 +736,7 @@ class QRPolyTrajGUI(QWidget):
         except e:
             print("Failed to publish polytraj")
 
-    def on_animate_eval_callback(self, t):
+    def on_eval_callback(self, t):
         if self.qr_polytraj is None:
             return
 
@@ -730,9 +756,9 @@ class QRPolyTrajGUI(QWidget):
         if t > t_max:
             t = 0
 
-        x = self.ppoly_laps['x'](t)
-        y = self.ppoly_laps['y'](t)
-        z = self.ppoly_laps['z'](t)
+        pos_vec = np.array([self.ppoly_laps['x'](t),
+                            self.ppoly_laps['y'](t),
+                            self.ppoly_laps['z'](t)])
 
         # Compute yaw to be along the path
         # yaw = np.arctan2(self.ppoly_laps['y'].derivative()(t),self.ppoly_laps['x'].derivative()(t))
@@ -740,6 +766,10 @@ class QRPolyTrajGUI(QWidget):
 
         yaw = self.ppoly_laps['yaw'](t)
 
+        vel_vec = np.array([self.ppoly_laps['x'].derivative()(t),
+                            self.ppoly_laps['y'].derivative()(t),
+                            self.ppoly_laps['z'].derivative()(t)])
+        
         acc_vec = np.array([self.ppoly_laps['x'].derivative().derivative()(t),
                             self.ppoly_laps['y'].derivative().derivative()(t),
                             self.ppoly_laps['z'].derivative().derivative()(t)])
@@ -760,7 +790,7 @@ class QRPolyTrajGUI(QWidget):
         # q, data = body_frame.body_frame_from_yaw_and_accel( yaw, acc_vec, out_format='quaternion',deriv_type='analyse')#,x_b_current = R[:,0],y_b_current = R[:,1] )
         q, data = body_frame.body_frame_from_yaw_and_accel( yaw, acc_vec, 'quaternion' )
         # print("R is {}".format(R))
-        return (t_max, x, y, z, q[0], q[1], q[2], q[3])
+        return (t_max, pos_vec, q[0], q[1], q[2], q[3], yaw, vel_vec, acc_vec)
 
     def on_waypoint_control_callback(self, position, index, qr_type):
 
