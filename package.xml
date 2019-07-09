@@ -15,5 +15,8 @@
   <depend>tf2_geometry_msgs</depend>
   <exec_depend>joy</exec_depend>
   <exec_depend>spacenav_node</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>rviz</exec_depend>
+  <exec_depend>message_runtime</exec_depend>
 
 </package>
