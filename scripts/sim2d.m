@@ -20,7 +20,8 @@ force_att = m * g;
 theta_att = 0.0;
 thetadot_att = 0.0;
 
-% gains kx = diag([ 20.0, 20.0 ], 0);
+% gains
+kx = diag([ 20.0, 20.0 ], 0);
 kxdot = diag([ 12.0, 12.0 ], 0);
 kR = 40.0;
 komega = 20.0;
