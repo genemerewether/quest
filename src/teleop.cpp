@@ -158,7 +158,7 @@ public:
     this->tLast_ = now;
 
     attRateThrust.header.stamp = now;
-    attRateThrust.header.frame_id = "teleop";
+    attRateThrust.header.frame_id = "quest-base-link";
 
     double roll = -getAxis(joy, axes_.y) * M_PI / 180.0;
     double pitch = getAxis(joy, axes_.x) * M_PI / 180.0;
@@ -206,7 +206,7 @@ public:
     mav_msgs::AttitudeRateThrust attRateThrust;
 
     attRateThrust.header.stamp = now;
-    attRateThrust.header.frame_id = "teleop";
+    attRateThrust.header.frame_id = "quest-base-link";
 
     double roll = -getAxis(joy, axes_.y) * M_PI / 180.0;
     double pitch = getAxis(joy, axes_.x) * M_PI / 180.0;
