@@ -69,10 +69,11 @@ lee.SetWorldParams(wParams)
 atti_ctrl = False # True for attitude control, False for position control
 rpVelOnly = False
 yawVelOnly = False
+doSaturation = True
 
 # initial conditions
-x0 = np.array([0.0, 0.0, 0.5])
-v0 = np.array([-0.5, -0.5, 0.0])
+x0 = np.array([0.0, 0.0, 0.0])
+v0 = np.array([0.0, 0.0, 0.0])
 a0 = np.array([0.0, 0.0, 0.0])
 R0 = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
 R = Rotation.from_dcm(R0)
@@ -81,11 +82,12 @@ omega0 = np.array([0.0, 0.0, 0.0])
 X0 = np.array([x0[0], x0[1], x0[2], v0[0], v0[1], v0[2], R0[0, 0], R0[0, 1], R0[0, 2], R0[1, 0], R0[1, 1], R0[1, 2], R0[2, 0], R0[2, 1], R0[2, 2], omega0[0], omega0[1], omega0[2]])
 # set initial conditions in controller
 lee.SetOdometry(x0, q0, v0, omega0)
-lee.SetAttitudeAngVel(q0, omega0)
-lee.SetPositionLinVelAcc(x0, v0, a0)
+# lee.SetAttitudeAngVel(q0, omega0)
+# lee.SetPositionLinVelAcc(x0, v0, a0)
 
 # desired state
-x_w__des = np.array([0.5, 0.5, 1.0])
+# x_w__des = np.array([0.0, 0.0, 0.1])
+x_w__des = np.array([0.0, 0.0, 1.0])
 v_w__des = np.array([0.0, 0.0, 0.0])
 a_w__des = np.array([0.0, 0.0, 0.0])
 j_w__des = np.array([0.0, 0.0, 0.0])
@@ -103,22 +105,22 @@ else:
 	lee.SetPositionDes(x_w__des, v_w__des, a_w__des, j_w__des)
 	lee.SetYawDes(yaw_des, yawdot_des)
 
-# lee.SetPositionDes()
-# lee.SetPositionAngAccelDes()
-# lee.SetVelocityDes()
-# lee.SetYawDes()
-# lee.SetYawDotDes()
-# lee.SetAttitudeDes()
-# lee.SetAttitudeAngAccelDes()
+# lee.SetPositionDes(x_w__des, v_w__des, a_w__des, j_w__des)
+# lee.SetPositionAngAccelDes(x_w__des, v_w__des, alpha_b__des)
+# lee.SetVelocityDes(v_w__des, a_w__des, j_w__des)
+# lee.SetYawDes(yaw_des, yawdot_des)
+# lee.SetYawDotDes(yawdot_des)
+# lee.SetAttitudeDes(w_q_b__des, omega_b__des, rpVelOnly, yawVelOnly, doSaturation)
+# lee.SetAttitudeAngAccelDes(w_q_b__des, omega_b__des, alpha_b__des)
 
 # xdes = np.ones((3,))
 # vdes = np.ones((3,))
 # omegades = np.ones((3,))
 # Rdes = Rotation.from_dcm(np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1]]))
 # qdes = Rotation.as_quat(Rdes)
-xdes, _, qdes, vdes, omegades, _ = lee.GetDesired()
-R = Rotation.from_quat(qdes)
-Rdes = Rotation.as_dcm(R)
+# xdes, _, qdes, vdes, omegades, _ = lee.GetDesired()
+# R = Rotation.from_quat(qdes)
+# Rdes = Rotation.as_dcm(R)
 # print(xdes, Rdes, vdes, omegades)
 # print
 
@@ -144,31 +146,41 @@ def simulate_states_over_time(t, X):
 	# print('R', R)
 	# print('omega', omega)
 
+	# TODO NOW add GetState back and separate plots into their components to make them easier to understand
+
 	# TODO don't make new variables for these every time, and same elsewhere
 	x_w, w_R_b, v_b, omega_b, a_b, _ = lee.GetState()
 
+	# TODO I think I need a state setter for the controller
+	# unless there's some way I'm implicitly updating the state, and I'm pretty darn sure there's not
+	# don't need a SetState because you already have one
+	R_obj = Rotation.from_dcm(R)
+	q = Rotation.as_quat(R_obj)
+	lee.SetOdometry(x, q, v, omega)
+
+	# TODO am I updating x or x_w or both or neither???
+
 	# attitude tracking error
-	e_R = np.zeros((3,))
-	e_omega = np.zeros((3,))
-	lee.so3Error(e_R, e_omega, rpVelOnly, yawVelOnly)
+	e_R, e_omega, _ = lee.Getso3Error(rpVelOnly, yawVelOnly)
 
 	# position tracking error
-	x_w__err = x_w__des - x_w
-	v_w__err = v_w__des - np.dot(w_R_b, v_b) # TODO should this be inverse?
+	x_w__err = x_w__des - x
+	v_w__err = v_w__des - np.dot(R, v) # TODO should this be inverse?
 
 	if atti_ctrl:
 
 		# attitude tracking controller
-		alpha_b__comm, _ = lee.GetAngAccelCommand(rpVelOnly, yawVelOnly) # TODO this does nothing
+		alpha_b__comm, _ = lee.GetAngAccelCommand(rpVelOnly, yawVelOnly)
 		f = np.dot(m * g * np.array([0.0, 0.0, 1.0]), np.dot(R, np.array([0.0, 0.0, 1.0])))
 		M = alpha_b__comm
 
 	else:
 
 		# position tracking controller
-		a_w__comm, alpha_b__comm, _ = lee.GetAccelAngAccelCommand() # TODO this does nothing
-		# print(a_w__comm, alpha_b__comm)
-		f = m * a_w__comm
+		a_w__comm, alpha_b__comm, _ = lee.GetAccelAngAccelCommand()
+		# print('a_w__comm', a_w__comm)
+		# print('alpha_b__comm', alpha_b__comm)
+		f = m * np.dot(a_w__comm, np.dot(R, np.array([0.0, 0.0, 1.0])))
 		M = alpha_b__comm
 
 	# print('f', f)
@@ -176,14 +188,22 @@ def simulate_states_over_time(t, X):
 
 	# use equations of motion to update state
 	xdot = np.array([X[3], X[4], X[5]])
-	vdot = g * np.array([0.0, 0.0, 1.0]) - np.dot(np.dot(f, R), np.array([0.0, 0.0, 1.0])) / m
+	# vdot = g * np.array([0.0, 0.0, 1.0]) - f * np.dot(R, np.array([0.0, 0.0, 1.0])) / m
+	# vdot = f * np.dot(R, np.array([0.0, 0.0, 1.0])) / m
+	vdot = -g * np.array([0.0, 0.0, 1.0]) + f * np.dot(R, np.array([0.0, 0.0, 1.0])) / m
 	Rdot = np.dot(R, hat(omega))
 	omegadot = np.dot(np.transpose(J), (M - np.cross(omega, np.dot(J, omega))))
 	Xdot = np.array([xdot[0], xdot[1], xdot[2], vdot[0], vdot[1], vdot[2], Rdot[0, 0], Rdot[0, 1], Rdot[0, 2], Rdot[1, 0], Rdot[1, 1], Rdot[1, 2], Rdot[2, 0], Rdot[2, 1], Rdot[2, 2], omegadot[0], omegadot[1], omegadot[2]])
 
+	# print('xdot', xdot)
+	# print('vdot', vdot)
+	# print('Rdot', Rdot)
+	# print('omegadot', omegadot)
 	# print('Xdot', Xdot)
+	# print
 
 	return Xdot, x_w, x_w__err, v_b, v_w__err, a_b, a_w__comm, w_R_b, e_R, omega_b, e_omega, alpha_b__comm
+	# return Xdot, x_w, x_w__err, v_b, v_w__err, a_w__comm, w_R_b, e_R, omega_b, e_omega, alpha_b__comm
 
 if __name__ == "__main__":
 
@@ -192,8 +212,8 @@ if __name__ == "__main__":
 	# simulate_states_over_time(t, X)
 	
 	# integrate equations of motion over time with control
-	tspan = np.linspace(0, 10, 1001)
-	tspan = np.linspace(0, 10, 11)
+	tspan = np.linspace(0, 100, 10001)
+	# tspan = np.linspace(0, 10, 11)
 	X = np.zeros((len(tspan), len(X0)))
 	X[0, :] = np.reshape(X0, (18,))
 	r = integrate.ode(simulate_states_over_time).set_integrator("dopri5")
@@ -233,6 +253,14 @@ if __name__ == "__main__":
 		omega_b[i, :] = tup[9]
 		e_omega[i, :] = tup[10]
 		alpha_b__comm[i, :] = tup[11]
+		# a_w__comm[i, :] = tup[5]
+		# w_R_b[i, :3] = tup[6][:, 0]
+		# w_R_b[i, 3:6] = tup[6][:, 1]
+		# w_R_b[i, 6:] = tup[6][:, 2]
+		# e_R[i, :] = tup[7]
+		# omega_b[i, :] = tup[8]
+		# e_omega[i, :] = tup[9]
+		# alpha_b__comm[i, :] = tup[10]
 	x_w__des = x_w__des * np.ones((tspan.size, 3))
 	v_w__des = v_w__des * np.ones((tspan.size, 3))
 	a_w__des = a_w__des * np.ones((tspan.size, 3))
@@ -242,108 +270,252 @@ if __name__ == "__main__":
 	omega_b__des = omega_b__des * np.ones((tspan.size, 3))
 	alpha_b__des = alpha_b__des * np.ones((tspan.size, 3))
 
-	# x tracking (X[0:3] or x_w, x_w__des, x_w__err)
-	plt.figure(1)
-	plt.plot(tspan, X[:, 0], tspan, x_w__des[:, 0], tspan, X[:, 1], tspan, x_w__des[:, 1], tspan, X[:, 2], tspan, x_w__des[:, 2])
-	plt.title('Position Tracking')
+	# # X tracking (X[0:3] or x_w, x_w__des, x_w__err)
+	# plt.figure(1)
+	# plt.plot(tspan, X[:, 0], tspan, x_w__des[:, 0], tspan, X[:, 1], tspan, x_w__des[:, 1], tspan, X[:, 2], tspan, x_w__des[:, 2])
+	# plt.title('Position Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('displacement (m)')
+	# plt.legend(['x', 'x_des', 'y', 'y_des', 'z', 'z_des'])
+
+	# # x tracking (X[0:3] or x_w, x_w__des, x_w__err)
+	# plt.figure(2)
+	# plt.plot(tspan, X[:, 0], tspan, x_w__des[:, 0])
+	# plt.title('x Position Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('displacement (m)')
+	# plt.legend(['x', 'x_des'])
+
+	# # y tracking (X[0:3] or x_w, x_w__des, x_w__err)
+	# plt.figure(3)
+	# plt.plot(tspan, X[:, 1], tspan, x_w__des[:, 1])
+	# plt.title('y Position Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('displacement (m)')
+	# plt.legend(['y', 'y_des'])
+
+	# z tracking (X[0:3] or x_w, x_w__des, x_w__err)
+	plt.figure(4)
+	plt.plot(tspan, X[:, 2], tspan, x_w__des[:, 2])
+	plt.title('z Position Tracking')
 	plt.xlabel('time (s)')
 	plt.ylabel('displacement (m)')
-	plt.legend(['x', 'x_des', 'y', 'y_des', 'z', 'z_des'])
+	plt.legend(['z', 'z_des'])
 
-	# xdot tracking (X[3:6] or v_b, v_w__des, v_w__err)
-	plt.figure(2)
-	plt.plot(tspan, X[:, 3], tspan, v_w__des[:, 0], tspan, X[:, 4], tspan, v_w__des[:, 1], tspan, X[:, 5], tspan, v_w__des[:, 2])
-	plt.title('Velocity Tracking')
+	# # Xdot tracking (X[3:6] or v_b, v_w__des, v_w__err)
+	# plt.figure(5)
+	# plt.plot(tspan, X[:, 3], tspan, v_w__des[:, 0], tspan, X[:, 4], tspan, v_w__des[:, 1], tspan, X[:, 5], tspan, v_w__des[:, 2])
+	# plt.title('Velocity Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('velocity (m/s)')
+	# plt.legend(['v_x', 'v_xdes', 'v_y', 'v_ydes', 'v_z', 'v_zdes'])
+
+	# # xdot tracking (X[3:6] or v_b, v_w__des, v_w__err)
+	# plt.figure(6)
+	# plt.plot(tspan, X[:, 3], tspan, v_w__des[:, 0])
+	# plt.title('x Velocity Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('velocity (m/s)')
+	# plt.legend(['v_x', 'v_xdes'])
+
+	# # ydot tracking (X[3:6] or v_b, v_w__des, v_w__err)
+	# plt.figure(7)
+	# plt.plot(tspan, X[:, 4], tspan, v_w__des[:, 1])
+	# plt.title('y Velocity Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('velocity (m/s)')
+	# plt.legend(['v_y', 'v_ydes'])
+
+	# zdot tracking (X[3:6] or v_b, v_w__des, v_w__err)
+	plt.figure(8)
+	plt.plot(tspan, X[:, 5], tspan, v_w__des[:, 2])
+	plt.title('z Velocity Tracking')
 	plt.xlabel('time (s)')
 	plt.ylabel('velocity (m/s)')
-	plt.legend(['v_x', 'v_xdes', 'v_y', 'v_ydes', 'v_z', 'v_zdes'])
+	plt.legend(['v_z', 'v_zdes'])
 
-	# a tracking (Xdot[3:6] or a_b, a_w__des or a_w__comm, difference of some combo of these)
-	plt.figure(3)
-	plt.plot(tspan, Xdot[:, 3], tspan, a_w__des[:, 0], tspan, Xdot[:, 4], tspan, a_w__des[:, 1], tspan, Xdot[:, 5], tspan, a_w__des[:, 2])
-	plt.title('Acceleration Tracking')
+	# # a tracking (Xdot[3:6] or a_b, a_w__des or a_w__comm, difference of some combo of these)
+	# plt.figure(9)
+	# plt.plot(tspan, Xdot[:, 3], tspan, a_w__des[:, 0], tspan, Xdot[:, 4], tspan, a_w__des[:, 1], tspan, Xdot[:, 5], tspan, a_w__des[:, 2])
+	# plt.title('Acceleration Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('acceleration (m/s^2')
+	# plt.legend(['a_x', 'a_xdes', 'a_y', 'a_ydes', 'a_z', 'a_zdes'])
+
+	# # ax tracking (Xdot[3:6] or a_b, a_w__des or a_w__comm, difference of some combo of these)
+	# plt.figure(10)
+	# plt.plot(tspan, Xdot[:, 3], tspan, a_w__des[:, 0], tspan, a_w__comm[:, 0])
+	# plt.title('x Acceleration Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('acceleration (m/s^2')
+	# plt.legend(['a_x', 'a_xdes', 'a_xcomm'])
+
+	# # ay tracking (Xdot[3:6] or a_b, a_w__des or a_w__comm, difference of some combo of these)
+	# plt.figure(11)
+	# plt.plot(tspan, Xdot[:, 4], tspan, a_w__des[:, 1], tspan, a_w__comm[:, 1])
+	# plt.title('y Acceleration Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('acceleration (m/s^2')
+	# plt.legend(['a_y', 'a_ydes', 'a_ycomm'])
+
+	# az tracking (Xdot[3:6] or a_b, a_w__des or a_w__comm, difference of some combo of these)
+	plt.figure(12)
+	plt.plot(tspan, Xdot[:, 5], tspan, a_w__des[:, 2], tspan, a_w__comm[:, 2])
+	plt.title('z Acceleration Tracking')
 	plt.xlabel('time (s)')
 	plt.ylabel('acceleration (m/s^2')
-	plt.legend(['a_x', 'a_xdes', 'a_y', 'a_ydes', 'a_z', 'a_zdes'])
+	plt.legend(['a_z', 'a_zdes', 'a_zcomm'])
 
-	# R tracking (X[6:15] or w_R_b, w_R_b__des, e_R)
-	plt.figure(4)
-	plt.plot(tspan, e_R[:, 0], tspan, e_R[:, 1], tspan, e_R[:, 2])
-	plt.title('Orientation Tracking')
-	plt.xlabel('time (s)')
-	plt.ylabel('orientation error')
-	plt.legend(['roll error', 'pitch error', 'yaw error'])
+	# # R tracking (X[6:15] or w_R_b, w_R_b__des, e_R)
+	# plt.figure(13)
+	# plt.plot(tspan, e_R[:, 0], tspan, e_R[:, 1], tspan, e_R[:, 2])
+	# plt.title('Orientation Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('orientation error')
+	# plt.legend(['roll error', 'pitch error', 'yaw error'])
 
-	# omega tracking (X[15:] or omega_b, omega_b__des, e_omega)
-	plt.figure(5)
-	plt.plot(tspan, X[:, 15], tspan, omega_b__des[:, 0], tspan, X[:, 16], tspan, omega_b__des[:, 1], tspan, X[:, 17], tspan, omega_b__des[:, 2])
-	plt.title('Angular Velocity Tracking')
-	plt.xlabel('time (s)')
-	plt.ylabel('angular velocity (rad/s)')
-	plt.legend(['omega_x', 'omega_xdes', 'omega_y', 'omega_ydes', 'omega_z', 'omega_zdes'])
+	# # omega tracking (X[15:] or omega_b, omega_b__des, e_omega)
+	# plt.figure(14)
+	# plt.plot(tspan, X[:, 15], tspan, omega_b__des[:, 0], tspan, X[:, 16], tspan, omega_b__des[:, 1], tspan, X[:, 17], tspan, omega_b__des[:, 2])
+	# plt.title('Angular Velocity Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('angular velocity (rad/s)')
+	# plt.legend(['omega_x', 'omega_xdes', 'omega_y', 'omega_ydes', 'omega_z', 'omega_zdes'])
 
-	# alpha tracking (Xdot[15:], alpha_b__comm or alpha_b__des, difference of some combo of these])
-	plt.figure(6)
-	plt.plot(tspan, Xdot[:, 15], tspan, alpha_b__comm[:, 0], tspan, Xdot[:, 16], tspan, alpha_b__comm[:, 1], tspan, Xdot[:, 17], tspan, alpha_b__comm[:, 2])
-	plt.title('Angular Acceleration Tracking')
-	plt.xlabel('time (s)')
-	plt.ylabel('angular acceleration (rad/s^2')
-	plt.legend(['alpha_x', 'alpha_xdes', 'alpha_y', 'alpha_ydes', 'alpha_z', 'alpha_zdes'])
+	# # alpha tracking (Xdot[15:], alpha_b__comm or alpha_b__des, difference of some combo of these])
+	# plt.figure(15)
+	# plt.plot(tspan, Xdot[:, 15], tspan, alpha_b__comm[:, 0], tspan, Xdot[:, 16], tspan, alpha_b__comm[:, 1], tspan, Xdot[:, 17], tspan, alpha_b__comm[:, 2])
+	# plt.title('Angular Acceleration Tracking')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('angular acceleration (rad/s^2')
+	# plt.legend(['alpha_x', 'alpha_xdes', 'alpha_y', 'alpha_ydes', 'alpha_z', 'alpha_zdes'])
 
-	# x compare (X[0], X[1], X[2], x_w)
-	plt.figure(7)
-	plt.plot(tspan, X[:, 0], tspan, x_w[:, 0], tspan, X[:, 1], tspan, x_w[:, 1], tspan, X[:, 2], tspan, x_w[:, 2])
-	plt.title('Displacement Variables Comparison')
-	plt.xlabel('time (s)')
-	plt.ylabel('displacement (m)')
-	plt.legend(['x_integrate', 'x_getter', 'y_integrate', 'y_getter', 'z_integrate', 'z_getter'])
+	# # X compare (X[0], X[1], X[2], x_w)
+	# plt.figure(16)
+	# plt.plot(tspan, X[:, 0], tspan, x_w[:, 0], tspan, X[:, 1], tspan, x_w[:, 1], tspan, X[:, 2], tspan, x_w[:, 2])
+	# plt.title('Displacement Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('displacement (m)')
+	# plt.legend(['x_integrate', 'x_getter', 'y_integrate', 'y_getter', 'z_integrate', 'z_getter'])
 
-	# v compare (X[3], X[4], X[5], v_b)
-	plt.figure(8)
-	plt.plot(tspan, X[:, 3], tspan, v_b[:, 0], tspan, X[:, 4], tspan, v_b[:, 1], tspan, X[:, 5], tspan, v_b[:, 2])
-	plt.title('Velocity Variables Comparison')
-	plt.xlabel('time (s)')
-	plt.ylabel('velocity (m/s)')
-	plt.legend(['vx_integrate', 'vx_getter', 'vy_integrate', 'vy_getter', 'vz_integrate', 'vz_getter'])
+	# # x compare (X[0], X[1], X[2], x_w)
+	# plt.figure(17)
+	# plt.plot(tspan, X[:, 0], tspan, x_w[:, 0])
+	# plt.title('x Displacement Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('displacement (m)')
+	# plt.legend(['x_integrate', 'x_getter'])
 
-	# a compare (Xdot[3], Xdot[4], Xdot[5], a_b)
-	plt.figure(9)
-	plt.plot(tspan, Xdot[:, 3], tspan, a_b[:, 0], tspan, Xdot[:, 4], tspan, a_b[:, 1], tspan, Xdot[:, 5], tspan, a_b[:, 2])
-	plt.title('Acceleration Variables Comparison')
-	plt.xlabel('time (s)')
-	plt.ylabel('acceleration (m/s^2)')
-	plt.legend(['ax_xdot', 'ax_getter', 'ay_xdot', 'ay_getter', 'az_xdot', 'az_getter'])
+	# # y compare (X[0], X[1], X[2], x_w)
+	# plt.figure(18)
+	# plt.plot(tspan, X[:, 1], tspan, x_w[:, 1])
+	# plt.title('y Displacement Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('displacement (m)')
+	# plt.legend(['y_integrate', 'y_getter'])
 
-	# a_des compare (a_w__comm, a_w__des)
-	plt.figure(10)
-	plt.plot(tspan, a_w__comm[:, 0], tspan, a_w__des[:, 0], tspan, a_w__comm[:, 1], tspan, a_w__des[:, 1], tspan, a_w__comm[:, 2], tspan, a_w__des[:, 2])
-	plt.title('Desired Acceleration Variables Comparison')
-	plt.xlabel('time (s)')
-	plt.ylabel('acceleration (m/s^2)')
-	plt.legend(['ax_comm', 'ax_des', 'ay_comm', 'ay_des', 'az_comm', 'az_des'])
+	# # z compare (X[0], X[1], X[2], x_w)
+	# plt.figure(19)
+	# plt.plot(tspan, X[:, 2], tspan, x_w[:, 2])
+	# plt.title('z Displacement Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('displacement (m)')
+	# plt.legend(['z_integrate', 'z_getter'])
 
-	# R compare (X[6:15], w_R_b)
-	plt.figure(11)
-	plt.plot(tspan, X[:, 6], tspan, w_R_b[:, 0], tspan, X[:, 7], tspan, w_R_b[:, 1], tspan, X[:, 8], tspan, w_R_b[:, 2], tspan, X[:, 9], tspan, w_R_b[:, 3], tspan, X[:, 10], tspan, w_R_b[:, 4], tspan, X[:, 11], tspan, w_R_b[:, 5], tspan, X[:, 12], tspan, w_R_b[:, 6], tspan, X[:, 13], tspan, w_R_b[:, 7], tspan, X[:, 14 ], tspan, w_R_b[:, 8])
-	plt.title('Orientation Variables Comparison')
-	plt.xlabel('time (s)')
-	plt.ylabel('rotation matrix term')
-	plt.legend(['Rxx_integrate', 'Rxx_getter', 'Rxy_integrate', 'Rxy_getter', 'Rxz_integrate', 'Rxz_getter', 'Ryx_integrate', 'Ryx_getter', 'Ryy_integrate', 'Ryy_getter', 'Ryz_integrate', 'Ryz_getter', 'Rzx_integrate', 'Rzx_getter', 'Rzy_integrate', 'Rzy_getter', 'Rzz_integrate', 'Rzz_getter'])
+	# # v compare (X[3], X[4], X[5], v_b)
+	# plt.figure(20)
+	# plt.plot(tspan, X[:, 3], tspan, v_b[:, 0], tspan, X[:, 4], tspan, v_b[:, 1], tspan, X[:, 5], tspan, v_b[:, 2])
+	# plt.title('Velocity Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('velocity (m/s)')
+	# plt.legend(['vx_integrate', 'vx_getter', 'vy_integrate', 'vy_getter', 'vz_integrate', 'vz_getter'])
 
-	# omega compare (X[15], X[16], X[17], omega_b)
-	plt.figure(12)
-	plt.plot(tspan, X[:, 15], tspan, omega_b[:, 0], tspan, X[:, 16], tspan, omega_b[:, 1], tspan, X[:, 17], tspan, omega_b[:, 2])
-	plt.title('Angular Velocity Variables Comparison')
-	plt.xlabel('time (s)')
-	plt.ylabel('angular velocity (rad/s)')
-	plt.legend(['omegax_integrate', 'omegax_getter', 'omegay_integrate', 'omegay_getter', 'omegaz_integrate', 'omegaz_getter'])
+	# # vx compare (X[3], X[4], X[5], v_b)
+	# plt.figure(21)
+	# plt.plot(tspan, X[:, 3], tspan, v_b[:, 0])
+	# plt.title('x Velocity Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('velocity (m/s)')
+	# plt.legend(['vx_integrate', 'vx_getter'])
 
-	# alpha_des compare (alpha_b__comm, alpha_b__des))
-	plt.figure(13)
-	plt.plot(tspan, alpha_b__comm[:, 0], tspan, alpha_b__des[:, 0], tspan, alpha_b__comm[:, 1], tspan, alpha_b__des[:, 1], tspan, alpha_b__comm[:, 2], tspan, alpha_b__des[:, 2])
-	plt.title('Desired Angular Acceleration Variables Comparison')
-	plt.xlabel('time (s)')
-	plt.ylabel('angular acceleration (rad/s^2)')
-	plt.legend(['alphax_comm', 'alphax_des', 'alphay_comm', 'alphay_des', 'alphaz_comm', 'alphaz_des'])
+	# # vy compare (X[3], X[4], X[5], v_b)
+	# plt.figure(22)
+	# plt.plot(tspan, X[:, 4], tspan, v_b[:, 1])
+	# plt.title('y Velocity Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('velocity (m/s)')
+	# plt.legend(['vy_integrate', 'vy_getter'])
+
+	# # vz compare (X[3], X[4], X[5], v_b)
+	# plt.figure(23)
+	# plt.plot(tspan, X[:, 5], tspan, v_b[:, 2])
+	# plt.title('z Velocity Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('velocity (m/s)')
+	# plt.legend(['vz_integrate', 'vz_getter'])
+
+	# # a compare (Xdot[3], Xdot[4], Xdot[5], a_b)
+	# plt.figure(24)
+	# plt.plot(tspan, Xdot[:, 3], tspan, a_b[:, 0], tspan, Xdot[:, 4], tspan, a_b[:, 1], tspan, Xdot[:, 5], tspan, a_b[:, 2])
+	# plt.title('Acceleration Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('acceleration (m/s^2)')
+	# plt.legend(['ax_xdot', 'ax_getter', 'ay_xdot', 'ay_getter', 'az_xdot', 'az_getter'])
+
+	# # ax compare (Xdot[3], Xdot[4], Xdot[5], a_b)
+	# plt.figure(25)
+	# plt.plot(tspan, Xdot[:, 3], tspan, a_b[:, 0])
+	# plt.title('x Acceleration Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('acceleration (m/s^2)')
+	# plt.legend(['ax_xdot', 'ax_getter'])
+
+	# # ay compare (Xdot[3], Xdot[4], Xdot[5], a_b)
+	# plt.figure(26)
+	# plt.plot(tspan, Xdot[:, 4], tspan, a_b[:, 1])
+	# plt.title('y Acceleration Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('acceleration (m/s^2)')
+	# plt.legend(['ay_xdot', 'ay_getter'])
+
+	# # az compare (Xdot[3], Xdot[4], Xdot[5], a_b)
+	# plt.figure(27)
+	# plt.plot(tspan, Xdot[:, 5], tspan, a_b[:, 2])
+	# plt.title('z Acceleration Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('acceleration (m/s^2)')
+	# plt.legend(['az_xdot', 'az_getter'])
+
+	# # a_des compare (a_w__comm, a_w__des)
+	# plt.figure(28)
+	# plt.plot(tspan, a_w__comm[:, 0], tspan, a_w__des[:, 0], tspan, a_w__comm[:, 1], tspan, a_w__des[:, 1], tspan, a_w__comm[:, 2], tspan, a_w__des[:, 2])
+	# plt.title('Desired Acceleration Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('acceleration (m/s^2)')
+	# plt.legend(['ax_comm', 'ax_des', 'ay_comm', 'ay_des', 'az_comm', 'az_des'])
+
+	# # R compare (X[6:15], w_R_b)
+	# plt.figure(32)
+	# plt.plot(tspan, X[:, 6], tspan, w_R_b[:, 0], tspan, X[:, 7], tspan, w_R_b[:, 1], tspan, X[:, 8], tspan, w_R_b[:, 2], tspan, X[:, 9], tspan, w_R_b[:, 3], tspan, X[:, 10], tspan, w_R_b[:, 4], tspan, X[:, 11], tspan, w_R_b[:, 5], tspan, X[:, 12], tspan, w_R_b[:, 6], tspan, X[:, 13], tspan, w_R_b[:, 7], tspan, X[:, 14 ], tspan, w_R_b[:, 8])
+	# plt.title('Orientation Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('rotation matrix term')
+	# plt.legend(['Rxx_integrate', 'Rxx_getter', 'Rxy_integrate', 'Rxy_getter', 'Rxz_integrate', 'Rxz_getter', 'Ryx_integrate', 'Ryx_getter', 'Ryy_integrate', 'Ryy_getter', 'Ryz_integrate', 'Ryz_getter', 'Rzx_integrate', 'Rzx_getter', 'Rzy_integrate', 'Rzy_getter', 'Rzz_integrate', 'Rzz_getter'])
+
+	# # omega compare (X[15], X[16], X[17], omega_b)
+	# plt.figure(33)
+	# plt.plot(tspan, X[:, 15], tspan, omega_b[:, 0], tspan, X[:, 16], tspan, omega_b[:, 1], tspan, X[:, 17], tspan, omega_b[:, 2])
+	# plt.title('Angular Velocity Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('angular velocity (rad/s)')
+	# plt.legend(['omegax_integrate', 'omegax_getter', 'omegay_integrate', 'omegay_getter', 'omegaz_integrate', 'omegaz_getter'])
+
+	# # alpha_des compare (alpha_b__comm, alpha_b__des))
+	# plt.figure(34)
+	# plt.plot(tspan, alpha_b__comm[:, 0], tspan, alpha_b__des[:, 0], tspan, alpha_b__comm[:, 1], tspan, alpha_b__des[:, 1], tspan, alpha_b__comm[:, 2], tspan, alpha_b__des[:, 2])
+	# plt.title('Desired Angular Acceleration Variables Comparison')
+	# plt.xlabel('time (s)')
+	# plt.ylabel('angular acceleration (rad/s^2)')
+	# plt.legend(['alphax_comm', 'alphax_des', 'alphay_comm', 'alphay_des', 'alphaz_comm', 'alphaz_des'])
 
 	plt.show()
