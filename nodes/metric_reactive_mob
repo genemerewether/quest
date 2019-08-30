@@ -1,0 +1,271 @@
+#! /usr/bin/env python
+
+import rospy
+import actionlib
+import sys
+import os
+import future
+from transitions.extensions import HierarchicalGraphMachine as Machine
+from transitions.extensions.states import add_state_features, Tags, Timeout
+import logging
+from time import sleep
+
+import tf
+
+from fprime_msgs.msg import RunSeqAction, RunSeqGoal
+from mav_msgs.msg import BoolStamped, AttitudeRateThrust, FlatOutput
+from sensor_msgs.msg import Joy
+
+states = [{'name': 'init', 'timeout': 10.0, 'on_timeout': 'doReboot'},
+          'idle',
+          'reboot',
+          {'name': 'metric', 'children': [{'name': 'takeoffPrep', 'timeout': 20.0, 'on_timeout': 'metricTakeoffPrepAbort'},
+                                          {'name': 'takeoff', 'timeout': 1.0, 'on_timeout': 'metricTakeoffAbort'},
+                                          'hover', 'plan', 'land', 'postLand']},
+          {'name': 'reactive', 'children': [{'name': 'takeoffPrep', 'timeout': 20.0, 'on_timeout': 'reactiveTakeoffPrepAbort'},
+                                            {'name': 'takeoff', 'timeout': 1.0, 'on_timeout': 'reactiveTakeoffAbort'},
+                                            'hop', 'plan', 'land', 'postLand']}]
+
+valid_metric_to_reactive_inflight_states = ['metric_takeoff', 'metric_land', 'metric_hover', 'metric_plan']
+valid_reactive_to_metric_inflight_states = ['reactive_hop', 'reactive_plan']
+
+transitions = [
+    # switching and recovery behaviors
+    { 'trigger': 'toReactivePlanInflight',
+      'source': valid_metric_to_reactive_inflight_states,
+      'dest': 'reactive_plan'
+    },
+    { 'trigger': 'toReactiveLandInflight',
+      'source': valid_metric_to_reactive_inflight_states,
+      'dest': 'reactive_land'
+    },
+    { 'trigger': 'toMetricHoverInflight',
+      'source': valid_reactive_to_metric_inflight_states,
+      'dest': 'metric_hover',
+      'conditions': ['is_metric_state_estimation_ok',
+                     'is_metric_control_error_ok']
+    },
+    { 'trigger': 'metricTakeoffPrepAbort',
+      'source': 'metric_takeoffPrep',
+      'dest': 'metric_postLand'
+    },
+    { 'trigger': 'reactiveTakeoffPrepAbort',
+      'source': 'reactive_takeoffPrep',
+      'dest': 'reactive_postLand'
+    },
+    { 'trigger': 'metricTakeoffAbort',
+      'source': 'metric_takeoff',
+      'dest': 'metric_land'
+    },
+    { 'trigger': 'reactiveTakeoffAbort',
+      'source': 'reactive_takeoff',
+      'dest': 'reactive_land'
+    },
+
+    # init
+    { 'trigger': 'completeInit',
+      'source': 'init',
+      'dest': 'idle'
+    },
+    { 'trigger': 'doIdle',
+      'source': ['metric_postLand', 'reactive_postLand'],
+      'dest': 'idle'
+    },
+
+    # metric mode nominal
+    { 'trigger': 'metricTakeoffPrep',
+      'source': 'idle',
+      'dest': 'metric_takeoffPrep',
+      'conditions': ['is_ok_to_fly']
+    },
+    { 'trigger': 'metricTakeoff',
+      'source': 'metric_takeoffPrep',
+      'dest': 'metric_takeoff',
+      'conditions': ['is_metric_state_estimation_ok']
+    },
+    { 'trigger': 'metricHover',
+      'source': 'metric_takeoff',
+      'dest': 'metric_hover',
+      'conditions': ['is_clear_of_ground']
+    },
+    { 'trigger': 'metricPlan',
+      'source': 'metric_hover',
+      'dest': 'metric_plan'
+    },
+
+    { 'trigger': 'metricLand',
+      'source': ['metric_hover', 'metric_plan'],
+      'dest': 'metric_land',
+    },
+    { 'trigger': 'metricPostLand',
+      'source': 'metric_land',
+      'dest': 'metric_postLand',
+    }
+]
+          
+@add_state_features(Tags, Timeout)
+class MetricReactiveMob(Machine):
+    def loop_callback(self, event):
+        print("state {}, time {}, elapsed {}".format(self.state,
+                                                     str(event.current_real),
+                                                     str(event.current_real - self.stateStartTime)))
+
+        odom_trans = None
+        odom_rot = None
+        
+        ctrlErr_trans = None
+        ctrlErr_rot = None
+        try:
+            (odom_trans, odom_rot) = self.trListener.lookupTransform('quest-base-link', 'world', rospy.Time(0))
+            (ctrlErr_trans, ctrlErr_rot) = self.trListener.lookupTransform('quest-base-link', 'quest-unknown', rospy.Time(0))
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            if 'metric_takeoff' == self.state:
+                self.metricTakeoffAbort()
+            elif 'metric_hover' == self.state or 'metric_plan' == self.state:
+                self.metricLand()
+                
+        if 'metric_takeoff' == self.state:
+            if odom_trans is not None and odom_trans[2] >= self.takeoff_height:
+                #self.metricHover()
+                print("reached takeoff height")
+                self.metricTakeoffAbort()
+        elif 'metric_land' == self.state:
+            # if l.t. land height or control error increasing, switch to postland
+            if odom_trans is not None and odom_trans[2] <= self.land_height:
+                self.metricPostLand()
+        else:
+            pass
+        
+    def initRos(self):
+        self.client = actionlib.SimpleActionClient('ROSSEQ', RunSeqAction)
+        self.client.wait_for_server()
+
+        self.att_rate_thrust_pub = rospy.Publisher('attitude_rate_thrust_setpoint', AttitudeRateThrust, queue_size=1)
+        self.flysafe_pub = rospy.Publisher('flysafe', BoolStamped, queue_size=1)
+
+        self.stateStartTime = rospy.Time.now()
+
+        self.trListener = tf.TransformListener()
+        
+        # must be last
+        self.loopDriver = rospy.Timer(rospy.Duration(0.01), self.loop_callback)
+
+    def is_ok_to_fly(self):
+        # max tilt for takeoff
+        # motor sweeps - check commanded vs. actual
+        # battery voltage / elapsed flight time / elapsed time
+        # system health
+        return True
+    
+    def is_metric_control_error_ok(self):
+        return True
+    
+    def is_metric_state_estimation_ok(self):
+        return True
+    
+    def is_clear_of_ground(self):
+        return True
+
+    def on_enter_metric_takeoffPrep(self):
+        goal = RunSeqGoal()
+        
+        goal.pathToSeq.data = "/seq/negthrust.bin"
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+        
+        goal.pathToSeq.data = "/seq/attrate.bin"
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+        
+        goal.pathToSeq.data = "/seq/vislam_on.bin"
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+        
+        goal.pathToSeq.data = "/seq/dfs_on.bin"
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+        
+        goal.pathToSeq.data = "/seq/arm.bin"
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+
+        self.metricTakeoff()
+
+    def on_enter_metric_takeoff(self):
+        a = AttitudeRateThrust()
+        a.header.stamp = rospy.Time.now()
+        a.attitude.w = 1
+        a.attitude.x = 0
+        a.attitude.y = 0
+        a.attitude.z = 0
+        a.thrust.z = self.mass * 1.05 * 9.81
+        self.att_rate_thrust_pub.publish(a)
+
+    def on_enter_metric_land(self):
+        a = AttitudeRateThrust()
+        a.header.stamp = rospy.Time.now()
+        a.attitude.w = 1
+        a.attitude.x = 0
+        a.attitude.y = 0
+        a.attitude.z = 0
+        a.thrust.z = self.mass * 0.95 * 9.81
+        self.att_rate_thrust_pub.publish(a)
+        
+    def on_enter_metric_postLand(self):
+        goal = RunSeqGoal()
+        
+        goal.pathToSeq.data = "/seq/disarm.bin"
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+   
+        goal.pathToSeq.data = "/seq/vislam_off.bin"
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+        
+        goal.pathToSeq.data = "/seq/dfs_off.bin"
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+
+        self.doIdle()
+        
+    def reset_state_start_time(self):
+        if not rospy.is_shutdown():
+            self.stateStartTime = rospy.Time.now()
+    
+    def __init__(self):
+        Machine.__init__(self, states=states, transitions=transitions, initial='init',
+                         after_state_change=['reset_state_start_time'],
+                         show_conditions=False,
+                         show_auto_transitions=False,
+                         show_state_attributes=False)
+        # todo params
+        self.mass = 1.56779
+        self.takeoff_height = 1.0
+        self.land_height = 0.2
+        
+        self.stateStartTime = 0
+
+def dump():
+    m = MetricReactiveMob()
+    m.get_graph().draw('metric_reactive_mob_state_diagram.png', prog='dot')
+
+def main():
+    rospy.init_node('metric_reactive_mob')
+
+    logging.basicConfig(level=logging.DEBUG)
+    logging.getLogger('transitions').setLevel(logging.DEBUG)
+    
+    m = MetricReactiveMob()
+    m.initRos()
+    
+    m.completeInit()
+    # takes us all the way to takeoff
+    # checks in loop take us to hover
+    m.metricTakeoffPrep()
+    
+    rospy.spin()
+
+    return
+
+if __name__ == '__main__':
+    main()
